@@ -2,7 +2,16 @@ import numpy as np
 import logging
 import copy
 from IPython.core.debugger import set_trace
-# This code was adapted from the web: https://github.com/alevchuk/pairwise-alignment-in-python
+
+from sklearn.base import BaseEstimator, ClassifierMixin
+
+# Alignment algorithm code was adapted from the web: https://github.com/alevchuk/pairwise-alignment-in-python
+
+from sklearn.neighbors import DistanceMetric
+
+def get_alignment_distance_metric(alignment):
+    """Return the KNN compatible distance metric using an alignment object"""
+    return DistanceMetric.get_metric('pyfunc',func=lambda x,y: alignment.score(y,x))
 
 class Alignment:
     def __init__(self,w2v,match_award=1,mismatch_penalty=0,gap1_penalty=-100000,gap2_penalty=0):
@@ -11,30 +20,36 @@ class Alignment:
         self.gap1_penalty = gap1_penalty
         self.gap2_penalty = gap2_penalty
         self.w2v = w2v
-
-    # return the score and mask
-    def score_v1(self,words,annotation_words,annotation_mask):
-        words = copy.deepcopy(words)
-        nwords = len(words)
+        
+    def apply_mask(self,annotation_words,annotation_mask):
         inxs = np.where(np.array(annotation_mask) == True)
         annotation_words = np.array(annotation_words)[inxs]
+        return annotation_words
+
+    # return the score and mask
+    def score(self,words,annotation_words,compute_mask=False):
+        words = copy.deepcopy(words)
+        nwords = len(words)
         identity, score, align1, align2 = self.needle(words,annotation_words)
         score = score*1./len(annotation_words)
-
-        matched_inxs = np.where(np.array(align2) != '-')
-        matched_words = np.array(align1)[matched_inxs]
-        # Need to convert the inxs to the original space because we could have added a gap
-        matched_inxs = []
-        for mword in matched_words:
-            if mword != '-':
-                inx = words.index(mword)
-                words[inx] = 'this_word_is_removed'
-                matched_inxs.append(inx)
-
-        mask = np.full(nwords, fill_value=False)
-        mask[matched_inxs] = True
         score = round(score*100)/100.
-        return score, mask.tolist()
+
+        computed_mask = None
+        if compute_mask:
+            matched_inxs = np.where(np.array(align2) != '-')
+            matched_words = np.array(align1)[matched_inxs]
+            # Need to convert the inxs to the original space because we could have added a gap
+            matched_inxs = []
+            for mword in matched_words:
+                if mword != '-':
+                    inx = words.index(mword)
+                    words[inx] = 'this_word_is_removed'
+                    matched_inxs.append(inx)
+
+            mask = np.full(nwords, fill_value=False)
+            mask[matched_inxs] = True
+            computed_mask = mask.tolist()
+        return score, computed_mask
 
     def train_v1(self,positive_words,positive_masks,negative_words,negative_masks):
         self.positive_words = positive_words
