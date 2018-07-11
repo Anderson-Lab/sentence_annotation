@@ -30,9 +30,13 @@ run_annotator(ORIGINAL_FILE_NAME, MASK_FILE_NAME)
 ```
 where `ORIGINAL_FILE_NAME` is the name of the file that contains the original tweet data and `MASK_FILE_NAME` is the name of the file that contains the serialized annotation data.
 
-## Testing
+## Training and Testing
 
-TODO
+We have created a wrapper Python script called *eval_methods.py* that provides a standardized method for training and evaluating the algorithms.
+
+## Visualizing Results
+
+We have created a Jupyter notebook to show you can demonstrate the results called *Analyze_Methods.ipynb*.
 
 ## Built With
 

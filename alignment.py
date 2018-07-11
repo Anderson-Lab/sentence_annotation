@@ -3,15 +3,7 @@ import logging
 import copy
 from IPython.core.debugger import set_trace
 
-from sklearn.base import BaseEstimator, ClassifierMixin
-
 # Alignment algorithm code was adapted from the web: https://github.com/alevchuk/pairwise-alignment-in-python
-
-from sklearn.neighbors import DistanceMetric
-
-def get_alignment_distance_metric(alignment):
-    """Return the KNN compatible distance metric using an alignment object"""
-    return DistanceMetric.get_metric('pyfunc',func=lambda x,y: alignment.score(y,x))
 
 class Alignment:
     def __init__(self,w2v,match_award=1,mismatch_penalty=0,gap1_penalty=-100000,gap2_penalty=0):
@@ -27,15 +19,16 @@ class Alignment:
         return annotation_words
 
     # return the score and mask
-    def score(self,words,annotation_words,compute_mask=False):
+    def score(self,words,annotation_words,computed_mask=None):
+        #import pdb
+        #pdb.set_trace()
         words = copy.deepcopy(words)
         nwords = len(words)
         identity, score, align1, align2 = self.needle(words,annotation_words)
         score = score*1./len(annotation_words)
         score = round(score*100)/100.
 
-        computed_mask = None
-        if compute_mask:
+        if computed_mask != None:
             matched_inxs = np.where(np.array(align2) != '-')
             matched_words = np.array(align1)[matched_inxs]
             # Need to convert the inxs to the original space because we could have added a gap
@@ -48,8 +41,8 @@ class Alignment:
 
             mask = np.full(nwords, fill_value=False)
             mask[matched_inxs] = True
-            computed_mask = mask.tolist()
-        return score, computed_mask
+            computed_mask.append(mask.tolist())
+        return score
 
     def train_v1(self,positive_words,positive_masks,negative_words,negative_masks):
         self.positive_words = positive_words

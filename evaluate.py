@@ -1,131 +1,45 @@
 import json
 import numpy as np
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction.text import TfidfTransformer
 from scipy.sparse import hstack
-from sklearn.naive_bayes import MultinomialNB
 import copy
-from sklearn.pipeline import Pipeline
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.pipeline import FeatureUnion
-from sklearn.feature_extraction.text import TfidfVectorizer
+
 from sklearn.externals import joblib
-from sklearn.ensemble import RandomForestClassifier
+
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import cross_val_score
 from sklearn import metrics
 from sklearn.metrics import make_scorer
 
+from dask import compute, delayed
+import dask.multiprocessing
+
 def convert_to_df(annots):
     sentences = []
     masks = []
     for annotation in annots:
-        sentence = " ".join(annotation['words'])
+        #words = list(filter(lambda a: a.strip() != "", annotation['words']))
+        if len(annotation['words']) > len(annotation['mask']):
+            annotation['words'] = annotation['words'][:-1]
+        if len(annotation['words']) != len(annotation['mask']):
+            import pdb
+            pdb.set_trace()
+            lkjdfdlk
+
+        sentence = " ".join([w.strip() for w in annotation['words']])
         mask = " ".join([str(int(v)) for v in annotation['mask']])
         masks.append(mask)
         sentences.append(sentence)
     return pd.DataFrame({"sentence":sentences,"mask":masks})
 
-class ItemSelector(BaseEstimator, TransformerMixin):
-    """
-    Parameters
-    ----------
-    key : hashable, required
-        The key corresponding to the desired value in a mappable.
-    """
-    def __init__(self, key):
-        self.key = key
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, df):
-        return list(df[self.key])
-    
-class PredictorPipelineSelector(BaseEstimator, TransformerMixin):
-    """
-    Parameters
-    ----------
-    key : hashable, required
-        The key corresponding to the desired value in a mappable.
-    """
-    def __init__(self, pipeline):
-        self.pipeline = pipeline
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, df):
-        return pd.DataFrame(self.pipeline.predict_proba(df)).values
-
-
-class NotItemSelector(BaseEstimator, TransformerMixin):
-    """
-    Parameters
-    ----------
-    key : hashable, required
-        The key corresponding to the desired value in a mappable.
-    """
-    def __init__(self, key):
-        self.key = key
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, df):
-        #import pdb
-        #pdb.set_trace()
-        return df.drop(self.key, axis=1).values
-    
-class Debug(BaseEstimator, TransformerMixin):
-
-    def transform(self, X):
-        print(X.shape)
-        print(type(X))
-        return X
-
-    def fit(self, X, y=None, **fit_params):
-        return self
-
-def create_pipeline_bow_rf():
-    clf = RandomForestClassifier(random_state=0)
-    pipeline = Pipeline([
-        # Use FeatureUnion to combine the features from subject and body
-        ('union', FeatureUnion(
-            transformer_list=[
-                # Pipeline for standard bag-of-words model for body
-                ('sale_description_bow', Pipeline([
-                    ('selector', ItemSelector(key='sentence')),
-                    ('tfidf', TfidfVectorizer())
-                    #,
-                    #('best', TruncatedSVD(n_components=50)),
-                ]))
-                #,
-
-                # Pipeline for pulling ad hoc features from post's body
-                #('other_features', Pipeline([
-                #    ('selector', NotItemSelector(key='sentence'))
-                #]))
-
-            ],
-        )),
-        
-        #('dbg',Debug()),
-
-        # Use a SVC classifier on the combined features
-        ('clf', clf)
-    ])
-    return pipeline
-
-def evaluate_method(pipeline,training_data_dir="training_data",scoring='f1_macro'):
+def evaluate_method(pipeline,training_data_dir="training_data",scoring='f1_macro',min_training_size=2,client=None):
     np.random.seed(0) # Set the random seed
     labels = open(training_data_dir+"/labels","r").read().split("\n")
     iterations = 20
     eval_results = {}
-    for label in labels:
-        print("Evaluating",label)
+    
+    def compute_func_label(label):
+        eval_results_label = {}
         positive_annots = json.loads(open(training_data_dir+"/"+label+"_positive.txt").read())
         negative_annots = json.loads(open(training_data_dir+"/"+label+"_negative.txt").read())
         
@@ -142,7 +56,7 @@ def evaluate_method(pipeline,training_data_dir="training_data",scoring='f1_macro
         positive_df = convert_to_df(positive_annots)
         negative_df = convert_to_df(negative_annots)
         if positive_df.shape[0] < 10 or negative_df.shape[0] < 10:
-            continue
+            return eval_results_label
         
         df_for_ml = positive_df.append(negative_df)
         
@@ -150,14 +64,27 @@ def evaluate_method(pipeline,training_data_dir="training_data",scoring='f1_macro
         targets[0:positive_df.shape[0]] = 1
                     
         if len(positive_annots) < 10:
-            continue
-        training_sizes = np.array(list(range(len(positive_annots)-1)),dtype=int)+1
+            return eval_results_label
+        training_sizes = np.array(list(range(min_training_size,len(positive_annots)-1)),dtype=int)#+1
         eval_results[label] = {}
-        for training_size in training_sizes:
-            print(df_for_ml.shape[0],2*training_size)
+        
+        def compute_func(training_size):
             cv = StratifiedShuffleSplit(n_splits=iterations, train_size=2*training_size, test_size=None)
-            eval_results[label][training_size] = cross_val_score(pipeline, df_for_ml, targets, cv=cv, scoring=scoring)
+            return cross_val_score(pipeline, df_for_ml, targets, cv=cv, scoring=scoring)
 
+        results = map(compute_func,training_sizes)
+        
+        for training_size,ind_results in zip(training_sizes,results):
+            eval_results_label[training_size] = ind_results
+        return eval_results_label
+    
+    if not client:
+        results = map(compute_func_label,labels)
+    else:
+        values = [delayed(compute_func_label)(label) for label in labels]
+        results = compute(*values, get=dask.multiprocessing.get, num_workers=num_processes)
+    for label,ind_results in zip(labels,results):
+        eval_results[label] = ind_results
     return eval_results
 
 def old_evaluate_method(method_func,alignment_flag=False):

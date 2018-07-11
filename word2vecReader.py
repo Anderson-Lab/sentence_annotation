@@ -1,5 +1,5 @@
 import logging
-import word2vecReaderUtils as utils
+from . import word2vecReaderUtils as utils
 from numpy import exp, dot, zeros, outer, random, dtype, float32 as REAL,\
     uint32, seterr, array, uint8, vstack, argsort, fromstring, sqrt, newaxis,\
     ndarray, empty, sum as np_sum, prod

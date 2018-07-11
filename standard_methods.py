@@ -2,6 +2,104 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.feature_extraction.text import TfidfTransformer
 import numpy as np
+from sklearn.pipeline import Pipeline
+from .common import *
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.pipeline import FeatureUnion
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+
+def create_pipeline_bow_rf():
+    clf = RandomForestClassifier(random_state=0)
+    pipeline = Pipeline([
+        # Use FeatureUnion to combine the features from subject and body
+        ('union', FeatureUnion(
+            transformer_list=[
+                # Pipeline for standard bag-of-words model for body
+                ('sale_description_bow', Pipeline([
+                    ('selector', ItemSelector(key='sentence')),
+                    ('tfidf', TfidfVectorizer())
+                    #,
+                    #('best', TruncatedSVD(n_components=50)),
+                ]))
+                #,
+
+                # Pipeline for pulling ad hoc features from post's body
+                #('other_features', Pipeline([
+                #    ('selector', NotItemSelector(key='sentence'))
+                #]))
+
+            ],
+        )),
+        
+        #('dbg',Debug()),
+
+        # Use a SVC classifier on the combined features
+        ('clf', clf)
+    ])
+    return pipeline
+
+def create_pipeline_bow_nb():
+    clf = MultinomialNB()
+    pipeline = Pipeline([
+        # Use FeatureUnion to combine the features from subject and body
+        ('union', FeatureUnion(
+            transformer_list=[
+                # Pipeline for standard bag-of-words model for body
+                ('sale_description_bow', Pipeline([
+                    ('selector', ItemSelector(key='sentence')),
+                    ('tfidf', TfidfVectorizer())
+                    #,
+                    #('best', TruncatedSVD(n_components=50)),
+                ]))
+                #,
+
+                # Pipeline for pulling ad hoc features from post's body
+                #('other_features', Pipeline([
+                #    ('selector', NotItemSelector(key='sentence'))
+                #]))
+
+            ],
+        )),
+        
+        #('dbg',Debug()),
+
+        # Use a SVC classifier on the combined features
+        ('clf', clf)
+    ])
+    return pipeline
+
+def create_pipeline_bow_svm():
+    clf = SGDClassifier(loss='hinge', penalty='l2',
+                        alpha=1e-3, random_state=42,
+                        max_iter=5, tol=None)
+    pipeline = Pipeline([
+        # Use FeatureUnion to combine the features from subject and body
+        ('union', FeatureUnion(
+            transformer_list=[
+                # Pipeline for standard bag-of-words model for body
+                ('sale_description_bow', Pipeline([
+                    ('selector', ItemSelector(key='sentence')),
+                    ('tfidf', TfidfVectorizer())
+                    #,
+                    #('best', TruncatedSVD(n_components=50)),
+                ]))
+                #,
+
+                # Pipeline for pulling ad hoc features from post's body
+                #('other_features', Pipeline([
+                #    ('selector', NotItemSelector(key='sentence'))
+                #]))
+
+            ],
+        )),
+        
+        #('dbg',Debug()),
+
+        # Use a SVC classifier on the combined features
+        ('clf', clf)
+    ])
+    return pipeline
 
 def bag_of_words_nb(training_positive_annots,training_negative_annots,test_positive_annots,test_negative_annots):
     train_positive_data = [" ".join(entry["words"]) for entry in training_positive_annots]
